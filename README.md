@@ -11,7 +11,7 @@ This Python script creates a two or three availability-zone VPC in the AWS regio
 **Usage:**
 
 ```
-build-vpc.py
+vpc-create.py
 ```
 
 **Arguments:**
@@ -29,7 +29,7 @@ build-vpc.py
 Using the VPC CIDR: 10.64.0.0/23 in 3 AZs
 
 ```
-./build-vpc.py
+./vpc-create.py
 vpc-id:  vpc-d94d63bc      name:  eng-dev-vpc-uw2
 sub-id:  subnet-fade8f8d   size:  10.64.0.0/27    zone:  us-west-2a
 sub-id:  subnet-989caffd   size:  10.64.0.32/27   zone:  us-west-2b
