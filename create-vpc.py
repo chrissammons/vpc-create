@@ -1,5 +1,4 @@
 #!/usr/bin/env python
-# BLAH!
 #
 # Python Version: 2.7
 # Boto Version 2.38
@@ -16,6 +15,7 @@ from netaddr import *
 import sys
 import boto.vpc
 import boto.ec2
+import boto3
 
 class Tag():
 
@@ -166,6 +166,15 @@ def create_acl(conn, name, region, vpc_id, azs, sub_ids):
 
   return acl_ids
 
+def create_flows(conn, vpc_id, log_group, role_arn):
+  """ Create VPC flow logs """
+
+  client = boto3.client('ec2')
+  response = conn.client.create_flow_logs( ResourceIds=[vpc_id], ResourceType='VPC', TrafficType='ALL', LogGroupName=log_group, DeliverLogsPermissionArn=role_arn)
+  
+  return response
+  pass
+
 def main(azs, region, keyid, secret, cidr, owner, env):
   """
   Do the work
@@ -208,7 +217,8 @@ def main(azs, region, keyid, secret, cidr, owner, env):
   sub_ids = create_sub(conn, name, region, vpc_id, azs, subnets, zones)
   rtb_ids = create_rtb(conn, name, region, vpc_id, azs, sub_ids, igw_id)
   acl_ids = create_acl(conn, name, region, vpc_id, azs, sub_ids)
+  flow_ids = create_flows(conn)
 
 if __name__ == "__main__":
 
-  main(azs = 3, region = 'us-west-2', keyid = 'XXXX', secret = 'XXXX', cidr = '10.64.0.0/23', owner = 'eng', env = 'dev')
+  main(azs = 2, region = 'us-west-2', keyid = 'AKIAIUIOU56V5F24BJ2Q', secret = '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', cidr = '10.64.0.0/23', owner = 'eng', env = 'dev')
