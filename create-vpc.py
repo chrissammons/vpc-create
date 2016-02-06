@@ -147,18 +147,29 @@ def create_rtb(conn, name, region, vpc_id, azs, sub_ids, igw_id):
 
   return rtb_ids
 
-def create_acl(conn, name, region, vpc_id, azs, sub_ids):
-  """ Create and associate network access-lists """
+def create_acl(conn, name, region, vpc_id, azs, sub_ids, cidr):
+  """ Create and associate network access-lists 
+
+      https://blogs.aws.amazon.com/security/post/Tx3NVS2JAL7KWOM/How-to-Help-Prepare-for-DDoS-Attacks-by-Reducing-Your-Attack-Surface
+  """
 
   i = 0; acl_ids = []
   for sub in sub_ids:
     if i == 0:
       acl = conn.create_network_acl(vpc_id)
-      conn.create_network_acl_entry(acl.id, 100, -1, 'allow', '0.0.0.0/0', egress=False)
-      conn.create_network_acl_entry(acl.id, 100, -1, 'allow', '0.0.0.0/0', egress=True)
+      conn.create_network_acl_entry(acl.id, 100, -1, 'allow',  cidr, egress=False)
+      conn.create_network_acl_entry(acl.id, 200, 6,  'allow', '0.0.0.0/0', egress=False, port_range_from=443, port_range_to=443)
+      conn.create_network_acl_entry(acl.id, 300, 6,  'allow', '0.0.0.0/0', egress=False, port_range_from=80, port_range_to=80)
+      conn.create_network_acl_entry(acl.id, 400, 6,  'allow', '0.0.0.0/0', egress=False, port_range_from=1024, port_range_to=65535)
+      conn.create_network_acl_entry(acl.id, 500, 6,  'allow', '0.0.0.0/0', egress=False, port_range_from=22, port_range_to=22)
+      conn.create_network_acl_entry(acl.id, 100, -1, 'allow',  cidr, egress=True)
+      conn.create_network_acl_entry(acl.id, 200, 6,  'allow', '0.0.0.0/0', egress=True,  port_range_from=443, port_range_to=443)
+      conn.create_network_acl_entry(acl.id, 300, 6,  'allow', '0.0.0.0/0', egress=True,  port_range_from=80, port_range_to=80)
+      conn.create_network_acl_entry(acl.id, 400, 6,  'allow', '0.0.0.0/0', egress=True,  port_range_from=1024, port_range_to=65535)
+      conn.create_network_acl_entry(acl.id, 500, 6,  'allow', '0.0.0.0/0', egress=True,  port_range_from=22, port_range_to=22)
       t = Tag(name, 'acl', region); t.tag_resource(conn, acl.id)
 
-      acl_ids.append(acl.id)
+      acl_ids.append(acl.id) 
     conn.associate_network_acl(acl.id, sub)
     i += 1
     if i == azs: i = 0
@@ -206,8 +217,8 @@ def main(azs, region, keyid, secret, cidr, owner, env):
   igw_id  = create_igw(conn, name, region, vpc_id)
   sub_ids = create_sub(conn, name, region, vpc_id, azs, subnets, zones)
   rtb_ids = create_rtb(conn, name, region, vpc_id, azs, sub_ids, igw_id)
-  acl_ids = create_acl(conn, name, region, vpc_id, azs, sub_ids)
+  acl_ids = create_acl(conn, name, region, vpc_id, azs, sub_ids, cidr)
 
 if __name__ == "__main__":
 
-  main(azs = 3, region = 'us-west-2', keyid = 'XXXX', secret = 'XXXX', cidr = '10.64.0.0/23', owner = 'eng', env = 'dev')
+  main(azs = 3, region = 'us-west-2', keyid = 'XXXXX', secret = 'XXXXX', cidr = '10.64.0.0/23', owner = 'eng', env = 'dev')
