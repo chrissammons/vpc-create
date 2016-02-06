@@ -166,14 +166,16 @@ def create_acl(conn, name, region, vpc_id, azs, sub_ids):
 
   return acl_ids
 
-def create_flows(conn, vpc_id, log_group, role_arn):
+def create_flows(vpc_id, keyid, secret, myregion):
   """ Create VPC flow logs """
 
+  session = boto3.session.Session(aws_access_key_id=keyid, aws_secret_access_key=secret, region_name=myregion)
+
   client = boto3.client('ec2')
-  response = conn.client.create_flow_logs( ResourceIds=[vpc_id], ResourceType='VPC', TrafficType='ALL', LogGroupName=log_group, DeliverLogsPermissionArn=role_arn)
+  flow_id = session.client.create_flow_logs(ResourceIds=[vpc_id], Resource`Type='VPC', TrafficType='ALL', LogGroupName=log_group, DeliverLogsPermissionArn=role_arn)
   
-  return response
-  pass
+  return flow_id
+
 
 def main(azs, region, keyid, secret, cidr, owner, env):
   """
@@ -217,7 +219,7 @@ def main(azs, region, keyid, secret, cidr, owner, env):
   sub_ids = create_sub(conn, name, region, vpc_id, azs, subnets, zones)
   rtb_ids = create_rtb(conn, name, region, vpc_id, azs, sub_ids, igw_id)
   acl_ids = create_acl(conn, name, region, vpc_id, azs, sub_ids)
-  flow_ids = create_flows(conn)
+  flow_id = create_flows(vpc_id, keyid, secret, myregion)
 
 if __name__ == "__main__":
 
