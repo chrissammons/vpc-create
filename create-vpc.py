@@ -118,32 +118,32 @@ def subnet_sizes(azs, cidr):
 def create_sub(conn, name, region, vpc_id, azs, subnets, zones):
   """ Create subnets """
 
-  i = 0; sub_ids = []
+  i = 0; sub_ids = []; tier = 'public'
   for sub in subnets:
     subnet = conn.create_subnet(vpc_id, sub, availability_zone=zones[i])
-    t = Tag(name, 'sub', region); t.tag_resource(conn, subnet.id)
+    t = Tag(name, tier + '-sub', region); t.tag_resource(conn, subnet.id)
 
     sub_ids.append(subnet.id)
     print("sub-id: ", subnet.id, "\tsize: ", sub, "\tzone: ", zones[i])
     i += 1
-    if i == azs: i = 0
+    if i == azs: i = 0; tier = 'private'
 
   return sub_ids
 
 def create_rtb(conn, name, region, vpc_id, azs, sub_ids, igw_id):
   """ Create and associate route-tables """
 
-  i = 0; rtb_ids = []
+  i = 0; rtb_ids = []; tier = 'public'
   for sub in sub_ids:
     if i == 0:
       rtb = conn.create_route_table(vpc_id)
       conn.create_route(rtb.id, '0.0.0.0/0', igw_id)
-      t = Tag(name, 'rtb', region); t.tag_resource(conn, rtb.id)
+      t = Tag(name, tier + '-rtb', region); t.tag_resource(conn, rtb.id)
 
       rtb_ids.append(rtb.id)
     conn.associate_route_table(rtb.id, sub)
     i += 1
-    if i == azs: i = 0
+    if i == azs: i = 0; tier = 'private'
 
   return rtb_ids
 
@@ -153,7 +153,7 @@ def create_acl(conn, name, region, vpc_id, azs, sub_ids, cidr):
       https://blogs.aws.amazon.com/security/post/Tx3NVS2JAL7KWOM/How-to-Help-Prepare-for-DDoS-Attacks-by-Reducing-Your-Attack-Surface
   """
 
-  i = 0; acl_ids = []
+  i = 0; acl_ids = []; tier = 'public'
   for sub in sub_ids:
     if i == 0:
       acl = conn.create_network_acl(vpc_id)
@@ -167,12 +167,12 @@ def create_acl(conn, name, region, vpc_id, azs, sub_ids, cidr):
       conn.create_network_acl_entry(acl.id, 300, 6,  'allow', '0.0.0.0/0', egress=True,  port_range_from=80, port_range_to=80)
       conn.create_network_acl_entry(acl.id, 400, 6,  'allow', '0.0.0.0/0', egress=True,  port_range_from=1024, port_range_to=65535)
       conn.create_network_acl_entry(acl.id, 500, 6,  'allow', '0.0.0.0/0', egress=True,  port_range_from=22, port_range_to=22)
-      t = Tag(name, 'acl', region); t.tag_resource(conn, acl.id)
+      t = Tag(name, tier + '-acl', region); t.tag_resource(conn, acl.id)
 
       acl_ids.append(acl.id) 
     conn.associate_network_acl(acl.id, sub)
     i += 1
-    if i == azs: i = 0
+    if i == azs: i = 0; tier = 'private'
 
   return acl_ids
 
