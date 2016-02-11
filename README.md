@@ -4,7 +4,7 @@ This Python script creates a two or three availability-zone VPC in the AWS regio
 
 **Requirements:**
 
-* Tested w/ python version 2.7 / boto version 2.38
+* Tested w/ python version 2.7 / boto version 2.38 / boto3 1.2.3
 * Valid AWS API keys
 * The netaddr library: https://pythonhosted.org/netaddr
 

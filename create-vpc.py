@@ -314,4 +314,4 @@ def main(azs, region, keyid, secret, cidr, owner, env):
 
 if __name__ == "__main__":
 
-  main(azs = 2, region = 'us-west-2', keyid = 'XXXXX', secret = 'XXXXX', cidr = '10.64.0.0/23', owner = 'eng', env = 'dev')
+  main(azs = 3, region = 'us-west-2', keyid = 'XXXXX', secret = 'XXXXX', cidr = '10.64.0.0/23', owner = 'eng', env = 'dev')
