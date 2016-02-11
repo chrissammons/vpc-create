@@ -221,7 +221,7 @@ def create_flows(vpc_id, keyid, secret, region):
 
   # Check for an existing Role with standard name
   try:
-    role = iam.get_role(RoleName='VPCFlowLogsRole')
+    role = iam.get_role(RoleName='flowlogsRole')
   except:
     role = 'None'
 
@@ -229,13 +229,13 @@ def create_flows(vpc_id, keyid, secret, region):
   if role == 'None':
     role = iam.create_role(
       Path = '/',
-      RoleName = 'VPCFlowLogsRole',
+      RoleName = 'flowlogsRole',
       AssumeRolePolicyDocument = json.dumps (Template.RolePolicy))
 
     # Create VPC Flow Logs policy
     policy = iam.create_policy(
       Path = '/',
-      PolicyName =  'VPCFlowLogsPolicy',
+      PolicyName =  'flowlogsPolicy',
       Description = 'Grants access to CloudWatch Logs.',
       PolicyDocument = json.dumps (Template.LogsPolicy))
 
@@ -250,7 +250,7 @@ def create_flows(vpc_id, keyid, secret, region):
   else:
     role_arn = role['Role']['Arn']
 
-  logs_name = 'VPCFlowLogsGroup' + '-' + vpc_id
+  logs_name = 'flowlogsGroup' + '-' + vpc_id
 
   # Create CloudWatch Logs group
   cwlogs = logs.create_log_group(
