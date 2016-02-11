@@ -309,7 +309,7 @@ def main(azs, region, keyid, secret, cidr, owner, env):
   igw_id  = create_igw(conn, name, region, vpc_id)
   sub_ids = create_sub(conn, name, region, vpc_id, azs, subnets, zones)
   rtb_ids = create_rtb(conn, name, region, vpc_id, azs, sub_ids, igw_id)
-  acl_ids = create_acl(conn, name, region, vpc_id, azs, sub_ids)
+  acl_ids = create_acl(conn, name, region, vpc_id, azs, sub_ids, cidr)
   flow_id = create_flows(vpc_id, keyid, secret, region)
 
 if __name__ == "__main__":
