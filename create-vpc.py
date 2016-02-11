@@ -230,14 +230,14 @@ def create_flows(vpc_id, keyid, secret, region):
     role = iam.create_role(
       Path = '/',
       RoleName = 'flowlogsRole',
-      AssumeRolePolicyDocument = json.dumps (Template.RolePolicy))
+      AssumeRolePolicyDocument = json.dumps(Template.RolePolicy))
 
     # Create VPC Flow Logs policy
     policy = iam.create_policy(
       Path = '/',
       PolicyName =  'flowlogsPolicy',
       Description = 'Grants access to CloudWatch Logs.',
-      PolicyDocument = json.dumps (Template.LogsPolicy))
+      PolicyDocument = json.dumps(Template.LogsPolicy))
 
     role_name = role['Role']['RoleName']
     role_arn = role['Role']['Arn']
