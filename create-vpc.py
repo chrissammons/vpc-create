@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 #
 # Python Version: 2.7
-# Boto Version 2.38
+# boto Version 2.38 / boto3 version 1.2.3
 #
 # Create a VPC
 #
@@ -13,9 +13,10 @@ from __future__ import print_function
 from netaddr import *
 
 import sys
+import json
 import boto.vpc
 import boto.ec2
-import boto3
+from boto3.session import Session
 
 class Tag():
 
@@ -36,6 +37,38 @@ class Tag():
   def tag_resource(self, conn, resource_id):
     conn.create_tags(resource_id, { 'Name' : self.name })
 
+class Template:
+
+  RolePolicy =  {
+                  'Version': '2012-10-17',
+                  'Statement': [
+                    {
+                      'Sid': '',
+                      'Effect': 'Allow',
+                      'Principal': {
+                        'Service': 'vpc-flow-logs.amazonaws.com'
+                      },
+                      'Action': 'sts:AssumeRole'
+                    }
+                  ]
+                }
+
+  LogsPolicy =  {
+                  'Version': '2012-10-17',
+                  'Statement': [
+                    {
+                      'Action': [
+                        'logs:CreateLogGroup',
+                        'logs:CreateLogStream',
+                        'logs:DescribeLogGroups',
+                        'logs:DescribeLogStreams',
+                        'logs:PutLogEvents'
+                      ],
+                      'Effect': 'Allow',
+                      'Resource': '*'
+                    }
+                  ]
+                }
 
 def create_vpc(conn, name, region, cidr):
   """ Create the VPC """
@@ -166,14 +199,60 @@ def create_acl(conn, name, region, vpc_id, azs, sub_ids):
 
   return acl_ids
 
-def create_flows(vpc_id, keyid, secret, myregion):
+def create_flows(vpc_id, keyid, secret, region):
   """ Create VPC flow logs """
 
-  session = boto3.session.Session(aws_access_key_id=keyid, aws_secret_access_key=secret, region_name=myregion)
+  session = Session(aws_access_key_id = keyid, aws_secret_access_key = secret, region_name = region)
 
-  client = boto3.client('ec2')
-  flow_id = session.client.create_flow_logs(ResourceIds=[vpc_id], Resource`Type='VPC', TrafficType='ALL', LogGroupName=log_group, DeliverLogsPermissionArn=role_arn)
-  
+  iam = session.client('iam')
+  logs = session.client('logs')
+  ec2 = session.client('ec2')
+
+  # Check for an existing Role with standard name
+  try:
+    role = iam.get_role(RoleName='VPCFlowLogsRole')
+  except:
+    role = 'None'
+
+  # Create VPC Flows Logs IAM Role
+  if role == 'None':
+    role = iam.create_role(
+      Path = '/',
+      RoleName = 'VPCFlowLogsRole',
+      AssumeRolePolicyDocument = json.dumps (Template.RolePolicy))
+
+    # Create VPC Flow Logs policy
+    policy = iam.create_policy(
+      Path = '/',
+      PolicyName =  'VPCFlowLogsPolicy',
+      Description = 'Grants access to CloudWatch Logs.',
+      PolicyDocument = json.dumps (Template.LogsPolicy))
+
+    role_name = role['Role']['RoleName']
+    role_arn = role['Role']['Arn']
+    policy_arn = policy['Policy']['Arn']
+
+    # Attach policy to the IAM Role
+    attach = iam.attach_role_policy(
+      RoleName = role_name,
+      PolicyArn = policy_arn)
+  else:
+    role_arn = role['Role']['Arn']
+
+  logs_name = 'VPCFlowLogsGroup' + '-' + vpc_id
+
+  # Create CloudWatch Logs group
+  cwlogs = logs.create_log_group(
+    logGroupName = logs_name)
+
+  # Enable VPC Flow Logs
+  flow_id = ec2.create_flow_logs(
+    ResourceIds = [vpc_id],
+    ResourceType = 'VPC',
+    TrafficType = 'ALL',
+    LogGroupName = logs_name,
+    DeliverLogsPermissionArn = role_arn)
+
   return flow_id
 
 
@@ -188,6 +267,7 @@ def main(azs, region, keyid, secret, cidr, owner, env):
   5.) Create subnets
   6.) Create and associate route-tables
   7.) Create and associate network access-lists
+  8.) Enable VPC Flow Logs
   """
 
   # Validate the region
@@ -219,8 +299,8 @@ def main(azs, region, keyid, secret, cidr, owner, env):
   sub_ids = create_sub(conn, name, region, vpc_id, azs, subnets, zones)
   rtb_ids = create_rtb(conn, name, region, vpc_id, azs, sub_ids, igw_id)
   acl_ids = create_acl(conn, name, region, vpc_id, azs, sub_ids)
-  flow_id = create_flows(vpc_id, keyid, secret, myregion)
+  flow_id = create_flows(vpc_id, keyid, secret, region)
 
 if __name__ == "__main__":
 
-  main(azs = 2, region = 'us-west-2', keyid = 'AKIAIUIOU56V5F24BJ2Q', secret = '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', cidr = '10.64.0.0/23', owner = 'eng', env = 'dev')
+  main(azs = 2, region = 'us-west-2', keyid = 'XXXXX', secret = 'XXXXX', cidr = '10.64.0.0/23', owner = 'eng', env = 'dev')
