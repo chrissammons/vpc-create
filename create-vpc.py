@@ -253,8 +253,8 @@ def create_flows(vpc_id, keyid, secret, region):
   logs_name = 'flowlogsGroup' + '-' + vpc_id
 
   # Create CloudWatch Logs group
-  cwlogs = logs.create_log_group(
-    logGroupName = logs_name)
+  group = logs.create_log_group(logGroupName = logs_name)
+  retention = logs.put_retention_policy(logGroupName=logs_name, retentionInDays=14)
 
   # Enable VPC Flow Logs
   flow_id = ec2.create_flow_logs(
