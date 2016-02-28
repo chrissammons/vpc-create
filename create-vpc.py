@@ -226,43 +226,51 @@ def create_flows(vpc_id, keyid, secret, region):
     role = 'None'
 
   # Create VPC Flows Logs IAM Role
-  if role == 'None':
-    role = iam.create_role(
-      Path = '/',
-      RoleName = 'flowlogsRole',
-      AssumeRolePolicyDocument = json.dumps(Template.RolePolicy))
-
-    # Create VPC Flow Logs policy
-    policy = iam.create_policy(
-      Path = '/',
-      PolicyName =  'flowlogsPolicy',
-      Description = 'Grants access to CloudWatch Logs.',
-      PolicyDocument = json.dumps(Template.LogsPolicy))
-
-    role_name = role['Role']['RoleName']
+  if role != 'None':
     role_arn = role['Role']['Arn']
-    policy_arn = policy['Policy']['Arn']
-
-    # Attach policy to the IAM Role
-    attach = iam.attach_role_policy(
-      RoleName = role_name,
-      PolicyArn = policy_arn)
+    error = 'None'
   else:
-    role_arn = role['Role']['Arn']
+    try:
+      role = iam.create_role(
+        Path = '/',
+        RoleName = 'flowlogsRole',
+        AssumeRolePolicyDocument = json.dumps(Template.RolePolicy))
+    except Exception as e:
+      error = e.message; print(error)
+      flow_id = 'null'
+    else:
+      error = 'None'
 
-  logs_name = 'flowlogsGroup' + '-' + vpc_id
+      # Create VPC Flow Logs policy
+      policy = iam.create_policy(
+        Path = '/',
+        PolicyName =  'flowlogsPolicy',
+        Description = 'Grants access to CloudWatch Logs.',
+        PolicyDocument = json.dumps(Template.LogsPolicy))
 
-  # Create CloudWatch Logs group
-  group = logs.create_log_group(logGroupName = logs_name)
-  retention = logs.put_retention_policy(logGroupName=logs_name, retentionInDays=14)
+      role_name = role['Role']['RoleName']
+      role_arn = role['Role']['Arn']
+      policy_arn = policy['Policy']['Arn']
 
-  # Enable VPC Flow Logs
-  flow_id = ec2.create_flow_logs(
-    ResourceIds = [vpc_id],
-    ResourceType = 'VPC',
-    TrafficType = 'ALL',
-    LogGroupName = logs_name,
-    DeliverLogsPermissionArn = role_arn)
+      # Attach policy to the IAM Role
+      attach = iam.attach_role_policy(
+        RoleName = role_name,
+        PolicyArn = policy_arn)
+
+  if error == 'None':
+    logs_name = 'flowlogsGroup' + '-' + vpc_id
+
+    # Create CloudWatch Logs group
+    group = logs.create_log_group(logGroupName = logs_name)
+    retention = logs.put_retention_policy(logGroupName=logs_name, retentionInDays=14)
+
+    # Enable VPC Flow Logs
+    flow_id = ec2.create_flow_logs(
+      ResourceIds = [vpc_id],
+      ResourceType = 'VPC',
+      TrafficType = 'ALL',
+      LogGroupName = logs_name,
+      DeliverLogsPermissionArn = role_arn)
 
   return flow_id
 
