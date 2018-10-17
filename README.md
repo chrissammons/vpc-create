@@ -10,9 +10,9 @@ size Subnets; two public and two private.
    * Boto3 version: 1.7.50
    * Botocore version: 1.10.50
    * Netaddr version: 0.7.19
-Valid AWS API keys/profile
+* Valid AWS API keys/profile
 
-**Setup**
+**Setup:**
 
 Update with your AWS profile / credentials.  Modify the region, VPC CIDR and VPC name (used for tagging)
 parameters.
@@ -47,7 +47,7 @@ acl_id: acl-0d5437aa2994b7997 tier: private
 - [ ] Enable VPC flow logs
 - [ ] NAT gateways
 
-**References**
+**References:**
 
 * https://netaddr.readthedocs.io/en/latest/
 * https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html
