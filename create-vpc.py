@@ -1,325 +1,510 @@
-#!/usr/bin/env python
-#
-# Python Version: 2.7
-# boto Version 2.38 / boto3 version 1.2.3
-#
-# Create a VPC
-#
+"""
 
-# Must be the first line
-from __future__ import print_function
+Create an AWS VPC.
 
-# https://pythonhosted.org/netaddr
+Python Version: 3.7.0
+Boto3 Version: 1.7.50
+
+"""
+
+import boto3
+from botocore.exceptions import ClientError
+
+# https://netaddr.readthedocs.io/en/latest/
 from netaddr import *
 
-import sys
-import json
-import boto.vpc
-import boto.ec2
-from boto3.session import Session
 
 class Tag():
 
-  def __init__(self, name, resource, region):
-    abbr = '-nul'
-    if region == 'us-east-1':      abbr = '-ue1'
-    if region == 'eu-west-1':      abbr = '-ew1'
-    if region == 'ap-northeast-1': abbr = '-an1'
-    if region == 'us-west-1':      abbr = '-uw1'
-    if region == 'us-west-2':      abbr = '-uw2'
-    if region == 'ap-southeast-1': abbr = '-as1'
-    if region == 'ap-southeast-2': abbr = '-as2'
-    if region == 'eu-central-1':   abbr = '-ec1'
-    if region == 'sa-east-1':      abbr = '-se1'
+  def __init__(self, name, resource):
 
-    self.name = name + resource + abbr
+    self.name = name.lower() + '-' + resource
 
-  def tag_resource(self, conn, resource_id):
-    conn.create_tags(resource_id, { 'Name' : self.name })
+  def resource(self, ec2, resource_id):
 
-class Template:
+    try:
+      result = ec2.create_tags(
+        Resources = [
+          resource_id 
+        ],
+        Tags = [
+          {
+            'Key': 'Name',
+            'Value': self.name
+          }
+        ]
+      )
+    except ClientError as e:
+      print(e.response['Error']['Message'])
 
-  RolePolicy =  {
-                  'Version': '2012-10-17',
-                  'Statement': [
-                    {
-                      'Sid': '',
-                      'Effect': 'Allow',
-                      'Principal': {
-                        'Service': 'vpc-flow-logs.amazonaws.com'
-                      },
-                      'Action': 'sts:AssumeRole'
-                    }
-                  ]
-                }
 
-  LogsPolicy =  {
-                  'Version': '2012-10-17',
-                  'Statement': [
-                    {
-                      'Action': [
-                        'logs:CreateLogGroup',
-                        'logs:CreateLogStream',
-                        'logs:DescribeLogGroups',
-                        'logs:DescribeLogStreams',
-                        'logs:PutLogEvents'
-                      ],
-                      'Effect': 'Allow',
-                      'Resource': '*'
-                    }
-                  ]
-                }
+def create_vpc(ec2, cidr, name):
+  """
+  Create a VPC
+  """
 
-def create_vpc(conn, name, region, cidr):
-  """ Create the VPC """
+  # Create the VPC
+
+  args = {
+    'CidrBlock' : cidr,
+    'InstanceTenancy' : 'default'
+  }
 
   try:
-    vpc = conn.create_vpc(cidr, instance_tenancy='default')
-  except boto.exception.EC2ResponseError as e:
-    print(e.message)
-    exit(1)
-  else:
-    conn.modify_vpc_attribute(vpc.id, enable_dns_support=True)
-    conn.modify_vpc_attribute(vpc.id, enable_dns_hostnames=True)
-    t = Tag(name, 'vpc', region); t.tag_resource(conn, vpc.id)
+    vpc = ec2.create_vpc(**args)['Vpc']
+  except ClientError as e:
+    print(e.response['Error']['Message'])
+    return None
 
-    print("vpc-id: ", vpc.id, "\tname: ", t.name)
-    return vpc.id
+  vpc_id = vpc['VpcId']
 
-def create_igw(conn, name, region, vpc_id):
-  """ Create and attach an igw """
+  # Add DNS support
+  # modify_vpc_attribute() only updates one attribute at a time
 
   try:
-    igw = conn.create_internet_gateway()
-  except boto.exception.EC2ResponseError as e:
-    print(e.message)
-    exit(1)
-  else:
-    conn.attach_internet_gateway(igw.id, vpc_id)
-    t = Tag(name, 'igw', region); t.tag_resource(conn, igw.id)
+    result = ec2.modify_vpc_attribute(
+      EnableDnsSupport = {
+          'Value': True
+      },
+      VpcId = vpc_id
+    )
 
-    return igw.id
+    result = ec2.modify_vpc_attribute(
+      EnableDnsHostnames = {
+        'Value': True
+      },
+      VpcId = vpc_id
+    )
+  except ClientError as e:
+    print(e.response['Error']['Message'])
 
-def subnet_sizes(azs, cidr):
+  # Tag the resource
+
+  tag = Tag(name, 'vpc'); tag.resource(ec2, vpc_id)
+  print('vpc_id: {}'.format(vpc_id))
+
+  return vpc_id
+
+
+def create_igw(ec2, vpc_id, name):
+  """
+  Create and attach an internet gateway
+  """
+
+  # Create the gateway
+
+  try:
+    igw = ec2.create_internet_gateway()['InternetGateway']
+  except ClientError as e:
+    print(e.response['Error']['Message'])
+    return None
+
+  igw_id = igw['InternetGatewayId']
+
+  # Attach the gateway
+
+  try:
+    result = ec2.attach_internet_gateway(
+      InternetGatewayId = igw_id,
+      VpcId = vpc_id
+    )
+  except ClientError as e:
+    print(e.response['Error']['Message'])
+
+  # Tag the resource
+
+  tag = Tag(name, 'igw'); tag.resource(ec2, igw_id)
+  print('igw_id: {}'.format(igw_id))
+
+  return igw_id
+
+
+def subnet_sizes(cidr):
   """
   Calculate subnets sizes
-
-  Possible scenarios:
-    a) /25 2AZ  (4 Subnets = /27)
-    b) /24 2AZ  (4 Subnets = /26)
-    c) /23 2AZ  (4 Subnets = /25)
-    d) /22 2AZ  (4 Subnets = /24)
-    e) /23 3AZ  (3 Subnets = /27, 3 Subnets = /25)
-    f) /22 3AZ  (3 Subnets = /26, 3 Subnets = /24)
   """
 
-  if azs != 2 and azs != 3:
-    print("ERROR: Number of AZs should be 2 or 3.")
-    exit(1)
-    
-  netmasks = ('255.255.252.0', '255.255.254.0', '255.255.255.0', '255.255.255.128')
+  # Permitted netmasks
+
+  netmasks = (
+    '255.255.255.0',
+    '255.255.254.0',
+    '255.255.252.0',
+    '255.255.248.0',
+    '255.255.240.0',
+    '255.255.224.0',
+    '255.255.192.0',
+    '255.255.128.0',
+    '255.255.0.0'
+  )
 
   ip = IPNetwork(cidr)
   mask = ip.netmask
 
-  if azs == 3:
-    if str(mask) not in netmasks[0:2]:
-      print("ERROR: Netmask " + str(mask) + " not found.")
-      exit(1)
-    
-    for n, netmask in enumerate(netmasks):
-      if str(mask) == netmask:
-        pub_net = list(ip.subnet(n + 24))
-        pri_subs = pub_net[1:]
-        pub_mask = pub_net[0].netmask
-      
-    pub_split = list(ip.subnet(26)) if (str(pub_mask) == '255.255.255.0') else list(ip.subnet(27))
-    pub_subs = pub_split[:3]
-  
-    subnets = pub_subs + pri_subs
+  if str(mask) not in netmasks:
+    print('Netmask not allowed: {}'.format(mask))
+    return None
 
-  else:
-    if str(mask) not in netmasks:
-      print("ERROR: Netmask " + str(mask) + " not found.")
-      exit(1)
+  # Create 4 equal size subnet blocks with the available CIDR space
 
-    for n, netmask in enumerate(netmasks):
-      if str(mask) == netmask:
-        subnets = list(ip.subnet(n + 24))
+  for n, netmask in enumerate(netmasks):
+    if str(mask) == netmask:
+      subnets = list(ip.subnet(26 - n))
 
   return subnets
 
-def create_sub(conn, name, region, vpc_id, azs, subnets, zones):
-  """ Create subnets """
 
-  i = 0; sub_ids = []; tier = 'public'
-  for sub in subnets:
-    subnet = conn.create_subnet(vpc_id, sub, availability_zone=zones[i])
-    t = Tag(name, tier + '-sub', region); t.tag_resource(conn, subnet.id)
-
-    sub_ids.append(subnet.id)
-    print("sub-id: ", subnet.id, "\tsize: ", sub, "\tzone: ", zones[i])
-    i += 1
-    if i == azs: i = 0; tier = 'private'
-
-  return sub_ids
-
-def create_rtb(conn, name, region, vpc_id, azs, sub_ids, igw_id):
-  """ Create and associate route-tables """
-
-  i = 0; rtb_ids = []; tier = 'public'
-  for sub in sub_ids:
-    if i == 0:
-      rtb = conn.create_route_table(vpc_id)
-      conn.create_route(rtb.id, '0.0.0.0/0', igw_id)
-      t = Tag(name, tier + '-rtb', region); t.tag_resource(conn, rtb.id)
-
-      rtb_ids.append(rtb.id)
-    conn.associate_route_table(rtb.id, sub)
-    i += 1
-    if i == azs: i = 0; tier = 'private'
-
-  return rtb_ids
-
-def create_acl(conn, name, region, vpc_id, azs, sub_ids, cidr):
-  """ Create and associate network access-lists 
-
-      https://blogs.aws.amazon.com/security/post/Tx3NVS2JAL7KWOM/How-to-Help-Prepare-for-DDoS-Attacks-by-Reducing-Your-Attack-Surface
+def create_sub(ec2, vpc_id, subnets, zones, name):
+  """
+  Create subnets
   """
 
-  i = 0; acl_ids = []; tier = 'public'
-  for sub in sub_ids:
-    if i == 0:
-      acl = conn.create_network_acl(vpc_id)
-      conn.create_network_acl_entry(acl.id, 100, -1, 'allow',  cidr, egress=False)
-      conn.create_network_acl_entry(acl.id, 200, 6,  'allow', '0.0.0.0/0', egress=False, port_range_from=443, port_range_to=443)
-      conn.create_network_acl_entry(acl.id, 300, 6,  'allow', '0.0.0.0/0', egress=False, port_range_from=80, port_range_to=80)
-      conn.create_network_acl_entry(acl.id, 400, 6,  'allow', '0.0.0.0/0', egress=False, port_range_from=1024, port_range_to=65535)
-      conn.create_network_acl_entry(acl.id, 500, 6,  'allow', '0.0.0.0/0', egress=False, port_range_from=22, port_range_to=22)
-      conn.create_network_acl_entry(acl.id, 100, -1, 'allow',  cidr, egress=True)
-      conn.create_network_acl_entry(acl.id, 200, 6,  'allow', '0.0.0.0/0', egress=True,  port_range_from=443, port_range_to=443)
-      conn.create_network_acl_entry(acl.id, 300, 6,  'allow', '0.0.0.0/0', egress=True,  port_range_from=80, port_range_to=80)
-      conn.create_network_acl_entry(acl.id, 400, 6,  'allow', '0.0.0.0/0', egress=True,  port_range_from=1024, port_range_to=65535)
-      conn.create_network_acl_entry(acl.id, 500, 6,  'allow', '0.0.0.0/0', egress=True,  port_range_from=22, port_range_to=22)
-      t = Tag(name, tier + '-acl', region); t.tag_resource(conn, acl.id)
+  i = 0
+  subnet_ids = []
+  tier = 'public'
 
-      acl_ids.append(acl.id) 
-    conn.associate_network_acl(acl.id, sub)
+  for subnet in subnets:
+
+    # Create a subnet
+
+    args = {
+      'AvailabilityZone' : zones[i],
+      'CidrBlock' : str(subnet),
+      'VpcId' : vpc_id
+    }
+
+    try:
+      sub = ec2.create_subnet(**args)['Subnet']
+    except ClientError as e:
+      print(e.response['Error']['Message'])
+      return None
+
+    subnet_id = sub['SubnetId']
+    subnet_ids.append(subnet_id)
+
+    # Tag the resource
+
+    tag = Tag(name, 'sub' + '-' + tier); tag.resource(ec2, subnet_id)
+    print('sub_id: {} size: {} zone: {} tier: {}'.format(subnet_id, subnet, zones[i], tier))
+
     i += 1
-    if i == azs: i = 0; tier = 'private'
+
+    if i == 2:
+      i = 0
+      tier = 'private'
+
+  return subnet_ids
+
+
+def create_rtb(ec2, vpc_id, subnet_ids, igw_id, name):
+  """
+  Create and associate route tables
+  """
+
+  i = 0
+  route_table_ids = []
+  tier = 'public'
+
+  for subnet in subnet_ids:
+    if i == 0:
+
+      # Create a route table
+
+      try:
+        rtb = ec2.create_route_table(VpcId=vpc_id)['RouteTable']
+      except ClientError as e:
+        print(e.response['Error']['Message'])
+        return
+
+      rtb_id = rtb['RouteTableId']
+      route_table_ids.append(rtb_id)
+
+      # Add a default route to the public route table
+
+      if tier == 'public' and igw_id != None:
+        try:
+          result = ec2.create_route(
+            DestinationCidrBlock = '0.0.0.0/0',
+            GatewayId = igw_id,
+            RouteTableId = rtb_id
+          )
+        except ClientError as e:
+          print(e.response['Error']['Message'])
+
+      # Tag the resource
+
+      tag = Tag(name, 'rtb' + '-' + tier); tag.resource(ec2, rtb_id)
+      print('rtb_id: {} tier: {}'.format(rtb_id, tier))
+
+    # Associate each subnet with a route table
+
+    try:
+      result = ec2.associate_route_table(
+        RouteTableId = rtb_id,
+        SubnetId = subnet
+      )
+    except ClientError as e:
+      print(e.response['Error']['Message'])
+
+    i += 1
+
+    if i == 2:
+      i = 0
+      tier = 'private'
+
+  return route_table_ids
+
+
+def create_acl(ec2, vpc_id, subnet_ids, cidr, name):
+  """
+  Create and associate network access lists 
+  """
+
+  i = 0
+  acl_ids = []
+  tier = 'public'
+
+  # Grab the default acl subnet associations
+
+  args = {
+    'Filters' : [
+      {
+        'Name' : 'vpc-id',
+        'Values' : [ vpc_id ]
+      }
+    ]
+  }
+
+  try:
+    default_acl = ec2.describe_network_acls(**args)['NetworkAcls']
+  except ClientError as e:
+    print(e.response['Error']['Message'])
+    default_acl_associations = []
+
+  else:
+    default_acl_associations = default_acl[0]['Associations']
+
+  for subnet in subnet_ids:
+    if i == 0:
+
+      # Create a network access list
+
+      try:
+        acl = ec2.create_network_acl(VpcId=vpc_id)['NetworkAcl']
+      except ClientError as e:
+        print(e.response['Error']['Message'])
+        return
+
+      acl_id = acl['NetworkAclId']
+      acl_ids.append(acl_id) 
+
+      # Create ingress rules
+
+      try:
+        result = ec2.create_network_acl_entry(
+          CidrBlock = '0.0.0.0/0',
+          Egress = False,
+          NetworkAclId = acl_id,
+          PortRange = {
+            'From': 443,
+            'To': 443
+          },
+          Protocol = '6',
+          RuleAction = 'allow',
+          RuleNumber = 100
+        )
+        result = ec2.create_network_acl_entry(
+          CidrBlock = '0.0.0.0/0',
+          Egress = False,
+          NetworkAclId = acl_id,
+          PortRange = {
+            'From': 80,
+            'To': 80
+          },
+          Protocol = '6',
+          RuleAction = 'allow',
+          RuleNumber = 200
+        )
+        result = ec2.create_network_acl_entry(
+          CidrBlock = '0.0.0.0/0',
+          Egress = False,
+          NetworkAclId = acl_id,
+          PortRange = {
+            'From': 1024,
+            'To': 65535
+          },
+          Protocol = '6',
+          RuleAction = 'allow',
+          RuleNumber = 300
+        )
+        result = ec2.create_network_acl_entry(
+          CidrBlock = cidr,
+          Egress = False,
+          NetworkAclId = acl_id,
+          PortRange = {
+            'From': 22,
+            'To': 22
+          },
+          Protocol = '6',
+          RuleAction = 'allow',
+          RuleNumber = 400
+        )
+      except ClientError as e:
+        print(e.response['Error']['Message'])
+
+      # Create egress rules
+
+      try:
+        result = ec2.create_network_acl_entry(
+          CidrBlock = '0.0.0.0/0',
+          Egress = True,
+          NetworkAclId = acl_id,
+          PortRange = {
+            'From': 443,
+            'To': 443
+          },
+          Protocol = '6',
+          RuleAction = 'allow',
+          RuleNumber = 100
+        )
+        result = ec2.create_network_acl_entry(
+          CidrBlock = '0.0.0.0/0',
+          Egress = True,
+          NetworkAclId = acl_id,
+          PortRange = {
+            'From': 80,
+            'To': 80
+          },
+          Protocol = '6',
+          RuleAction = 'allow',
+          RuleNumber = 200
+        )
+        result = ec2.create_network_acl_entry(
+          CidrBlock = '0.0.0.0/0',
+          Egress = True,
+          NetworkAclId = acl_id,
+          PortRange = {
+            'From': 1024,
+            'To': 65535
+          },
+          Protocol = '6',
+          RuleAction = 'allow',
+          RuleNumber = 300
+        )
+        result = ec2.create_network_acl_entry(
+          CidrBlock = cidr,
+          Egress = True,
+          NetworkAclId = acl_id,
+          PortRange = {
+            'From': 22,
+            'To': 22
+          },
+          Protocol = '6',
+          RuleAction = 'allow',
+          RuleNumber = 400
+        )
+      except ClientError as e:
+        print(e.response['Error']['Message'])
+
+      # Tag the resource
+
+      tag = Tag(name, 'acl' + '-' + tier); tag.resource(ec2, acl_id)
+      print('acl_id: {} tier: {}'.format(acl_id, tier))
+
+    # Associate each subnet with a network access list
+
+    if len(default_acl_associations) > 0:
+      association_id = None
+      for association in default_acl_associations:
+        if association['SubnetId'] == subnet:
+          association_id = association['NetworkAclAssociationId']
+
+      if association_id != None:
+        try:
+          result = ec2.replace_network_acl_association(
+            AssociationId = association_id,
+            NetworkAclId = acl_id
+        )
+        except ClientError as e:
+          print(e.response['Error']['Message'])
+
+    i += 1
+
+    if i == 2:
+      i = 0
+      tier = 'private'
 
   return acl_ids
 
-def create_flows(vpc_id, keyid, secret, region):
-  """ Create VPC flow logs """
 
-  session = Session(aws_access_key_id = keyid, aws_secret_access_key = secret, region_name = region)
-
-  iam = session.client('iam')
-  logs = session.client('logs')
-  ec2 = session.client('ec2')
-
-  # Check for an existing Role with standard name
-  try:
-    role = iam.get_role(RoleName='flowlogsRole')
-  except:
-    role = 'None'
-
-  # Create VPC Flows Logs IAM Role
-  if role != 'None':
-    role_arn = role['Role']['Arn']
-    error = 'None'
-  else:
-    try:
-      role = iam.create_role(
-        Path = '/',
-        RoleName = 'flowlogsRole',
-        AssumeRolePolicyDocument = json.dumps(Template.RolePolicy))
-    except Exception as e:
-      error = e.message; print(error)
-      flow_id = 'null'
-    else:
-      error = 'None'
-
-      # Create VPC Flow Logs policy
-      policy = iam.create_policy(
-        Path = '/',
-        PolicyName =  'flowlogsPolicy',
-        Description = 'Grants access to CloudWatch Logs.',
-        PolicyDocument = json.dumps(Template.LogsPolicy))
-
-      role_name = role['Role']['RoleName']
-      role_arn = role['Role']['Arn']
-      policy_arn = policy['Policy']['Arn']
-
-      # Attach policy to the IAM Role
-      attach = iam.attach_role_policy(
-        RoleName = role_name,
-        PolicyArn = policy_arn)
-
-  if error == 'None':
-    logs_name = 'flowlogsGroup' + '-' + vpc_id
-
-    # Create CloudWatch Logs group
-    group = logs.create_log_group(logGroupName = logs_name)
-    retention = logs.put_retention_policy(logGroupName=logs_name, retentionInDays=14)
-
-    # Enable VPC Flow Logs
-    flow_id = ec2.create_flow_logs(
-      ResourceIds = [vpc_id],
-      ResourceType = 'VPC',
-      TrafficType = 'ALL',
-      LogGroupName = logs_name,
-      DeliverLogsPermissionArn = role_arn)
-
-  return flow_id
-
-
-def main(azs, region, keyid, secret, cidr, owner, env):
+def get_zones(ec2):
   """
-  Do the work
-
-  1.) Setup/validate region and availability-zones
-  2.) Create the VPC
-  3.) Create and attach an internet-gateway
-  4.) Calculate subnet sizes (netaddr)
-  5.) Create subnets
-  6.) Create and associate route-tables
-  7.) Create and associate network access-lists
-  8.) Enable VPC Flow Logs
+  Return all available zones in the region
   """
 
-  # Validate the region
-  myregion = boto.ec2.get_region(region_name=region)
-  if myregion == None:
-    print("Unknown region.")
-    exit(1)
-
-  # Establish a VPC service connection
-  try:
-    conn = boto.vpc.VPCConnection(aws_access_key_id=keyid, aws_secret_access_key=secret, region=myregion)
-  except boto.exception.EC2ResponseError as e:
-    print(e.message)
-    exit(1)
-
-  # Grab the availability-zones
   zones = []
-  all_zones = conn.get_all_zones()
-  for zone in all_zones:
-    if zone.state != 'available':
-      continue
-    zones.append(zone.name)
 
-  subnets = subnet_sizes(azs, cidr)               # Calculate the subnet sizes
-  name = owner.lower() + '-' + env.lower() + '-'  # Used for tagging
+  try:
+    aws_zones = ec2.describe_availability_zones()['AvailabilityZones']
+  except ClientError as e:
+    print(e.response['Error']['Message'])
+    return None
 
-  vpc_id  = create_vpc(conn, name, region, cidr)
-  igw_id  = create_igw(conn, name, region, vpc_id)
-  sub_ids = create_sub(conn, name, region, vpc_id, azs, subnets, zones)
-  rtb_ids = create_rtb(conn, name, region, vpc_id, azs, sub_ids, igw_id)
-  acl_ids = create_acl(conn, name, region, vpc_id, azs, sub_ids, cidr)
-  flow_id = create_flows(vpc_id, keyid, secret, region)
+  for zone in aws_zones:
+    if zone['State'] == 'available':
+      zones.append(zone['ZoneName'])
+
+  return zones
+
+
+def main(profile, region, cidr, name):
+  """
+  Do the work..
+
+  Order of operation:
+
+  1.) Create the VPC
+  2.) Create and attach an internet gateway
+  3.) Calculate subnet sizes (netaddr)
+  4.) Create the subnets
+  5.) Create and associate route tables
+  6.) Create and associate network access lists
+  """
+
+  # AWS Credentials
+  # https://boto3.amazonaws.com/v1/documentation/api/latest/guide/configuration.html
+
+  session = boto3.Session(profile_name=profile)
+  ec2 = session.client('ec2', region_name=region)
+
+  # Grab the available zones
+
+  zones = get_zones(ec2)
+  if zones == None or len(zones) < 2:
+    return
+
+  # Calculate the subnet sizes
+
+  subnets = subnet_sizes(cidr)
+  if subnets == None:
+    return
+
+  vpc_id  = create_vpc(ec2, cidr, name)
+  if vpc_id == None:
+    return
+
+  igw_id  = create_igw(ec2, vpc_id, name)
+  sub_ids = create_sub(ec2, vpc_id, subnets, zones, name)
+  if sub_ids == None:
+    return
+
+  rtb_ids = create_rtb(ec2, vpc_id, sub_ids, igw_id, name)
+  acl_ids = create_acl(ec2, vpc_id, sub_ids, cidr, name)
+
+  return
+
 
 if __name__ == "__main__":
 
-  main(azs = 3, region = 'us-west-2', keyid = 'XXXXX', secret = 'XXXXX', cidr = '10.64.0.0/23', owner = 'eng', env = 'dev')
+  main(profile = '<YOUR_PROFILE>', region = 'us-west-2', cidr = '10.64.0.0/22', name = 'test-dev')
+
