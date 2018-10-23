@@ -40,11 +40,12 @@ rtb_id: rtb-0b2ea67bca5d9e919 tier: public
 rtb_id: rtb-0b584bd58ed1b92d5 tier: private
 acl_id: acl-035062164b0c971dd tier: public
 acl_id: acl-0d5437aa2994b7997 tier: private
+flw_id: fl-0fe7e9d190d9bbb01
 ```
 
 **To Do:**
 
-- [ ] Enable VPC flow logs
+- [x] Enable VPC flow logs
 - [ ] NAT gateways
 
 **References:**

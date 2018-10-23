@@ -9,6 +9,7 @@ Boto3 Version: 1.7.50
 
 import boto3
 from botocore.exceptions import ClientError
+from enable_flows import Flow
 
 # https://netaddr.readthedocs.io/en/latest/
 from netaddr import *
@@ -457,6 +458,33 @@ def get_zones(ec2):
   return zones
 
 
+def create_flow(profile, region, vpc_id):
+  """
+  Enable VPC flow logs
+  """
+
+  flow = Flow(profile, region, vpc_id)
+
+  # Create IAM role and policy
+
+  role_arn = flow.create_iam_role()
+
+  # Create CloudWatch Logs group
+
+  if role_arn != None:
+    logs_name = flow.create_logs_group()
+
+  # Enable VPC flow logs
+
+    if logs_name != None:
+      flow_id = flow.create_flow(vpc_id, logs_name, role_arn)
+
+      if flow_id != None:
+        print('flw_id: {}'.format(flow_id))
+
+  return
+
+
 def main(profile, region, cidr, name):
   """
   Do the work..
@@ -469,6 +497,7 @@ def main(profile, region, cidr, name):
   4.) Create the subnets
   5.) Create and associate route tables
   6.) Create and associate network access lists
+  7.) Enable VPC flow logs
   """
 
   # AWS Credentials
@@ -500,6 +529,7 @@ def main(profile, region, cidr, name):
 
   rtb_ids = create_rtb(ec2, vpc_id, sub_ids, igw_id, name)
   acl_ids = create_acl(ec2, vpc_id, sub_ids, cidr, name)
+  flow_id = create_flow(profile, region, vpc_id)
 
   return
 
