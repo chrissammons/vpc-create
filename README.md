@@ -24,7 +24,7 @@ main(profile = '<YOUR_PROFILE>', region = 'us-west-2', cidr = '10.64.0.0/22', na
 **Usage:**
 
 ```
-python create-vpc.py
+python create_vpc.py
 ```
 
 **Output:**
